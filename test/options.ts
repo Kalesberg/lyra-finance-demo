@@ -77,12 +77,7 @@ describe("Options Market", function () {
   });
 
   it('Buy straddle', async () => {
-    /*
-      call premium: "313626400881826666437"
-                    "335147793099570123193"
-      put premium: "65870633202943297937"
-    */
-    const tradeSize = lyraUtils.toBN('5');
+    const tradeSize = lyraUtils.toBN('3');
     boardIds = await testSystem.optionMarket.getLiveBoards();
     strikeIds = await testSystem.optionMarket.getBoardStrikes(boardIds[0]);
     const strike = await testSystem.optionMarket.getStrike(strikeIds[0]);
@@ -91,17 +86,17 @@ describe("Options Market", function () {
     await expect(strategy.buyStraddle(strike.id, tradeSize)).to.be.revertedWith("ERC20: transfer amount exceeds allowance");
 
     await testSystem.snx.quoteAsset.approve(strategy.address, ethers.constants.MaxUint256);
-    const receipt = await (await strategy.buyStraddle(strike.id, tradeSize)).wait();
+    await (await strategy.buyStraddle(strike.id, tradeSize)).wait();
 
-    const events = receipt.events?.filter(e => e.event === 'Trade');
-    expect(events?.length).to.eq(2);
-    expect(events?.[0]?.args?.user).to.eq(account.address);
-    expect(events?.[0]?.args?.strikeId).to.eq(strike.id);
-    expect(events?.[0]?.args?.positionId.gt(BigNumber.from('0'))).to.be.true;
-    expect(events?.[0]?.args?.optionType).to.eq(0); // LONG CALL
-    expect(events?.[1]?.args?.user).to.eq(account.address);
-    expect(events?.[1]?.args?.strikeId).to.eq(strike.id);
-    expect(events?.[1]?.args?.positionId.gt(BigNumber.from('0'))).to.be.true;
-    expect(events?.[1]?.args?.optionType).to.eq(1); // LONG PUT
+    const positions = await strategy.getPositions(account.address);
+    expect(positions.length).eq(2);
+    expect(positions[0].positionId.gt(0)).to.be.true;
+    expect(positions[0].strikeId.eq(strike.id)).to.be.true;
+    expect(positions[0].amount.eq(tradeSize)).to.be.true;
+    expect(positions[0].optionType).eq(0);  // LONG_CALL
+    expect(positions[1].positionId.gt(0)).to.be.true;
+    expect(positions[1].strikeId.eq(strike.id)).to.be.true;
+    expect(positions[1].amount.eq(tradeSize)).to.be.true;
+    expect(positions[1].optionType).eq(1);  // LONG_PUT
   })
 });

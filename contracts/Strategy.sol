@@ -3,12 +3,9 @@ pragma solidity ^0.8.9;
 
 import "@lyrafinance/protocol/contracts/periphery/LyraAdapter.sol";
 import {DecimalMath} from "@lyrafinance/protocol/contracts/synthetix/DecimalMath.sol";
-import "hardhat/console.sol";
 
 contract Strategy is LyraAdapter {
   using DecimalMath for uint256;
-
-  event Trade(address indexed user, uint256 indexed strikeId, uint256 indexed positionId, OptionType optionType);
 
   function initAdapter(
     address _lyraRegistry,
@@ -21,11 +18,12 @@ contract Strategy is LyraAdapter {
   }
 
   function buyStraddle(uint256 strikeId, uint256 size) external {
+    address user = msg.sender;
     Strike memory strike = _getStrike(strikeId);
     uint256 callCost = _getPremiumLimit(strike, size, OptionType.LONG_CALL);
     uint256 putCost = _getPremiumLimit(strike, size, OptionType.LONG_PUT);
 
-    quoteAsset.transferFrom(msg.sender, address(this), callCost + putCost);
+    quoteAsset.transferFrom(user, address(this), callCost + putCost);
 
     TradeResult memory callTrade = _openPosition(
       TradeInputParameters({
@@ -40,7 +38,7 @@ contract Strategy is LyraAdapter {
         rewardRecipient: address(0)
       })
     );
-    emit Trade(msg.sender, strikeId, callTrade.positionId, OptionType.LONG_CALL);
+    optionToken.transferFrom(address(this), user, callTrade.positionId);
 
     TradeResult memory putTrade = _openPosition(
       TradeInputParameters({
@@ -55,25 +53,23 @@ contract Strategy is LyraAdapter {
         rewardRecipient: address(0)
       })
     );
-    emit Trade(msg.sender, strikeId, putTrade.positionId, OptionType.LONG_PUT);
+    optionToken.transferFrom(address(this), user, putTrade.positionId);
 
     uint256 leftOver = quoteAsset.balanceOf(address(this));
     if (leftOver > 0) {
-      quoteAsset.transfer(msg.sender, leftOver);
+      quoteAsset.transfer(user, leftOver);
     }
   }
 
-  function estimateStraddleCost(uint256 strikeId, uint256 size) public view returns (uint256) {
-    (uint256 callPremium, uint256 putPremium) = _getPurePremiumForStrike(strikeId);
-
-    return (callPremium + putPremium).multiplyDecimal(size);
+  function getPositions(address user) public view returns (IOptionToken.OptionPosition[] memory) {
+    return optionToken.getOwnerPositions(user);
   }
 
   function _getPremiumLimit(Strike memory strike, uint size, OptionType optionType) internal view returns (uint256) {
     ExchangeRateParams memory exchangeParams = _getExchangeParams();
     (uint callPremium, uint putPremium) = _getPurePremium(
       _getSecondsToExpiry(strike.expiry),
-      12e17,
+      1.2e18, // higher max volatility
       exchangeParams.spotPrice,
       strike.strikePrice
     );
